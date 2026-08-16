@@ -21,9 +21,12 @@ const uploadImage = async (req, res, next) => {
     });
 
     const transform = (options) => cloudinary.url(result.public_id, { secure: true, transformation: options });
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
     return res.status(201).json({
       imageUrl: result.secure_url,
       publicId: result.public_id,
+      cloudName,
+      cloudinaryId: result.public_id,
       thumbnailUrl: transform([
         { width: 300, height: 300, crop: "fill", gravity: "auto" },
         { quality: "auto", fetch_format: "auto" },

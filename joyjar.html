@@ -67,12 +67,21 @@
     const list = document.getElementById("joy-list");
     const jar = document.getElementById("jar");
     const status = document.getElementById("status");
+    const apiBase = window.location.protocol === "file:" ? "http://localhost:5000" : "";
+    const uploadUrl = `${apiBase}/api/upload`;
 
     const readStorage = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; } };
     const memories = () => readStorage(joyStorageKey, []);
     const saveMemories = (items) => localStorage.setItem(joyStorageKey, JSON.stringify(items));
     const escapeHtml = (text) => { const el = document.createElement("div"); el.textContent = text; return el.innerHTML; };
     const publicPath = (id) => id.split("/").map(encodeURIComponent).join("/");
+    const normalizeUploadedImage = (item = {}) => ({
+      ...item,
+      publicId: item.publicId || item.public_id || item.cloudinaryId || null,
+      cloudName: item.cloudName || process.env?.CLOUDINARY_CLOUD_NAME || "dmvuzwlxs",
+      imageUrl: item.imageUrl || item.secure_url || null,
+      polaroidUrl: item.polaroidUrl || item.thumbnailUrl || null,
+    });
     const legacyPolaroidUrl = (item) => item.publicId && item.cloudName
       ? `https://res.cloudinary.com/${item.cloudName}/image/upload/w_700,c_limit,b_14px_solid_white,r_18,e_shadow,q_auto,f_auto/${publicPath(item.publicId)}`
       : null;
@@ -82,10 +91,11 @@
       list.innerHTML = items.length ? "" : '<p class="text-[#4b463b]">Your first happy memory is waiting to be saved.</p>';
       jar.querySelectorAll(".joy-note").forEach((note) => note.remove());
       items.forEach((item, index) => {
+        const normalized = normalizeUploadedImage(item);
         const card = document.createElement("article");
         card.className = "rounded-2xl border-2 border-[#2b1611] bg-[#fff0ed] p-5 shadow-[5px_6px_0_#fec1d6]";
         // Supports both current uploads and entries saved before transformed URLs were added.
-        const imageSource = item.polaroidUrl || legacyPolaroidUrl(item) || item.imageUrl;
+        const imageSource = normalized.polaroidUrl || legacyPolaroidUrl(normalized) || normalized.imageUrl;
         const image = imageSource
           ? `<img class="polaroid mb-5 h-48 w-full object-cover" src="${escapeHtml(imageSource)}" alt="Memory photo">`
           : "";
@@ -138,10 +148,10 @@
           button.textContent = "Adding your photo…";
           const data = new FormData();
           data.append("image", imageInput.files[0]);
-          const response = await fetch("/api/upload", { method: "POST", body: data });
+          const response = await fetch(uploadUrl, { method: "POST", body: data });
           const result = await response.json();
           if (!response.ok) throw new Error(result.message || "Cloudinary could not upload this photo.");
-          uploaded = result;
+          uploaded = normalizeUploadedImage(result);
         }
       } catch (error) {
         // A photo upload must never prevent the written joy from being saved.

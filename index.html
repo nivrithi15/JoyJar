@@ -346,6 +346,10 @@
 <div class="bg-surface-container-high rounded-xl p-6 mt-2 relative border border-dashed border-outline-variant/40">
 <p class="font-display-lg-mobile text-display-lg-mobile text-on-surface mb-6 leading-snug">"What made you smile today?"</p>
 <input id="smile-entry" class="w-full lined-input font-body-rt text-body-rt py-2 text-on-surface placeholder:text-outline-variant/70 italic" placeholder="scribble your thoughts..." type="text" maxlength="1000" aria-label="What made you smile today?"/>
+<label class="mt-4 block">
+  <span class="font-label-accent text-label-accent text-sm uppercase tracking-wide text-on-surface-variant">Add a photo (optional)</span>
+  <input id="smile-photo" class="mt-2 block w-full text-sm text-on-surface-variant file:mr-4 file:rounded-full file:border-0 file:bg-primary-container file:px-3 file:py-2 file:text-sm file:font-label-accent file:text-on-primary-container" type="file" accept="image/*" aria-label="Upload a photo for this moment" />
+</label>
 </div>
 <button id="save-smile" type="button" class="mt-auto bg-surface text-on-surface font-label-accent text-label-accent px-6 py-3 rounded-xl border-2 border-outline-variant hover:bg-surface-variant hover:border-primary transition-colors flex items-center gap-2 self-start sticker-shadow hover:-translate-y-1">
                 Save my answer
@@ -449,9 +453,12 @@
 <script>
   // Browser storage lets Little Moments survive refreshes without a database.
   const smileEntry = document.getElementById("smile-entry");
+  const smilePhoto = document.getElementById("smile-photo");
   const saveSmileButton = document.getElementById("save-smile");
   const savedMoments = document.getElementById("saved-moments");
   const storageKey = "joyjar-little-moments";
+  const apiBase = window.location.protocol === "file:" ? "http://localhost:5000" : "";
+  const uploadUrl = `${apiBase}/api/upload`;
 
   const escapeHtml = (value) => {
     const element = document.createElement("div");
@@ -464,11 +471,30 @@
     day: "numeric",
   }).format(new Date(date));
 
+  const publicPath = (id) => id.split("/").map(encodeURIComponent).join("/");
+  const normalizeUploadedImage = (item = {}) => ({
+    ...item,
+    publicId: item.publicId || item.public_id || item.cloudinaryId || null,
+    cloudName: item.cloudName || "dmvuzwlxs",
+    imageUrl: item.imageUrl || item.secure_url || null,
+    polaroidUrl: item.polaroidUrl || item.thumbnailUrl || null,
+  });
+  const legacyPolaroidUrl = (item) => item.publicId && item.cloudName
+    ? `https://res.cloudinary.com/${item.cloudName}/image/upload/w_700,c_limit,b_14px_solid_white,r_18,e_shadow,q_auto,f_auto/${publicPath(item.publicId)}`
+    : null;
+
   const renderMoment = (moment) => {
+    const item = normalizeUploadedImage(moment);
     const card = document.createElement("article");
     card.className = "bg-[#f3e8ff] rounded-xl p-6 border-2 border-on-surface relative sticker-shadow tilt-right hover:-translate-y-2 hover:rotate-0 transition-all duration-300";
+    const imageSource = item.polaroidUrl || legacyPolaroidUrl(item) || item.imageUrl;
+    const imageMarkup = imageSource
+      ? `<img class="w-full h-48 object-cover rounded-lg border-2 border-on-surface/10 mb-4" src="${escapeHtml(imageSource)}" alt="Memory photo" />`
+      : "";
+
     card.innerHTML = `
       <div class="absolute -top-3 -right-3 text-2xl bg-surface border-2 border-on-surface rounded-full w-10 h-10 flex items-center justify-center">😊</div>
+      ${imageMarkup}
       <p class="font-body-rt text-body-rt text-on-surface mb-6 mt-4">“${escapeHtml(moment.text)}”</p>
       <div class="flex justify-between items-end mt-auto pt-4 border-t border-on-surface/10">
         <span class="font-label-accent text-sm text-on-surface-variant/80 italic handwritten">${formatDate(moment.createdAt)}</span>
@@ -485,24 +511,69 @@
     }
   };
 
+  const uploadPhoto = async (file) => {
+    if (!file) return {};
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const response = await fetch(uploadUrl, { method: "POST", body: formData });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || "Cloudinary could not upload your photo.");
+    }
+
+    return normalizeUploadedImage(result);
+  };
+
   // Show saved Little Moments whenever the page opens.
   getMoments().forEach(renderMoment);
 
-  const saveSmile = () => {
+  const saveSmile = async () => {
     const text = smileEntry.value.trim();
     if (!text) {
       smileEntry.focus();
       return;
     }
 
-    const moment = { text, createdAt: new Date().toISOString() };
-    const moments = getMoments();
-    moments.unshift(moment);
-    localStorage.setItem(storageKey, JSON.stringify(moments));
-    savedMoments.innerHTML = "";
-    moments.forEach(renderMoment);
-    smileEntry.value = "";
-    smileEntry.focus();
+    const file = smilePhoto.files[0];
+    const previousLabel = saveSmileButton.textContent;
+    saveSmileButton.disabled = true;
+    saveSmileButton.textContent = file ? "Uploading photo…" : "Saving…";
+
+    try {
+      const uploaded = file ? await uploadPhoto(file) : {};
+      const moment = {
+        text,
+        createdAt: new Date().toISOString(),
+        ...uploaded,
+      };
+      const moments = getMoments();
+      moments.unshift(moment);
+      localStorage.setItem(storageKey, JSON.stringify(moments));
+      savedMoments.innerHTML = "";
+      moments.forEach(renderMoment);
+      smileEntry.value = "";
+      smilePhoto.value = "";
+      smileEntry.focus();
+    } catch (error) {
+      const moments = getMoments();
+      const fallbackMoment = {
+        text,
+        createdAt: new Date().toISOString(),
+      };
+      moments.unshift(fallbackMoment);
+      localStorage.setItem(storageKey, JSON.stringify(moments));
+      savedMoments.innerHTML = "";
+      moments.forEach(renderMoment);
+      smileEntry.value = "";
+      smilePhoto.value = "";
+      smileEntry.focus();
+      console.error(error);
+      window.alert(`Your moment was saved, but the photo could not upload: ${error.message}`);
+    } finally {
+      saveSmileButton.disabled = false;
+      saveSmileButton.textContent = previousLabel;
+    }
   };
 
   saveSmileButton.addEventListener("click", saveSmile);
