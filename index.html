@@ -457,8 +457,23 @@
   const saveSmileButton = document.getElementById("save-smile");
   const savedMoments = document.getElementById("saved-moments");
   const storageKey = "joyjar-little-moments";
-  const apiBase = window.location.protocol === "file:" ? "http://localhost:5000" : "";
-  const uploadUrl = `${apiBase}/api/upload`;
+  const cloudinaryConfig = {
+    cloudName: "dmvuzwlxs",
+    apiKey: "597994388813174",
+    apiSecret: "qN4S-GjM8h4fHQsOJqg0ONtzg6w",
+    uploadPreset: "",
+  };
+  const cloudinaryUploadUrl = `https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/image/upload`;
+
+  const createCloudinarySignature = async (params) => {
+    const raw = Object.entries(params)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => `${key}=${value}`)
+      .join("&") + cloudinaryConfig.apiSecret;
+    const bytes = new TextEncoder().encode(raw);
+    const digest = await crypto.subtle.digest("SHA-1", bytes);
+    return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  };
 
   const escapeHtml = (value) => {
     const element = document.createElement("div");
@@ -513,16 +528,72 @@
 
   const uploadPhoto = async (file) => {
     if (!file) return {};
-    const formData = new FormData();
-    formData.append("image", file);
 
-    const response = await fetch(uploadUrl, { method: "POST", body: formData });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result.message || "Cloudinary could not upload your photo.");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("api_key", cloudinaryConfig.apiKey);
+    if (cloudinaryConfig.uploadPreset) {
+      formData.append("upload_preset", cloudinaryConfig.uploadPreset);
     }
 
-    return normalizeUploadedImage(result);
+    try {
+      const response = await fetch(cloudinaryUploadUrl, { method: "POST", body: formData });
+      const text = await response.text();
+      let result = {};
+      if (text) {
+        try {
+          result = JSON.parse(text);
+        } catch (error) {
+          throw new Error(`Cloudinary returned an invalid response: ${text.slice(0, 120)}`);
+        }
+      }
+      if (response.ok) {
+        return normalizeUploadedImage({
+          imageUrl: result.secure_url,
+          publicId: result.public_id,
+          cloudName: cloudinaryConfig.cloudName,
+        });
+      }
+      throw new Error(result.error?.message || "Cloudinary could not upload your photo.");
+    } catch (error) {
+      if (!cloudinaryConfig.apiSecret) {
+        throw error;
+      }
+
+      const timestamp = Math.round(Date.now() / 1000);
+      const params = { folder: "joyjar/memories", timestamp, resource_type: "image" };
+      const signature = await createCloudinarySignature(params);
+
+      const signedData = new FormData();
+      signedData.append("file", file);
+      signedData.append("api_key", cloudinaryConfig.apiKey);
+      signedData.append("timestamp", String(timestamp));
+      signedData.append("signature", signature);
+      signedData.append("folder", "joyjar/memories");
+
+      const signedResponse = await fetch(cloudinaryUploadUrl, {
+        method: "POST",
+        body: signedData,
+      });
+      const signedText = await signedResponse.text();
+      let signedResult = {};
+      if (signedText) {
+        try {
+          signedResult = JSON.parse(signedText);
+        } catch (error) {
+          throw new Error(`Cloudinary returned an invalid response: ${signedText.slice(0, 120)}`);
+        }
+      }
+      if (!signedResponse.ok) {
+        throw new Error(signedResult.error?.message || "Cloudinary could not upload your photo.");
+      }
+
+      return normalizeUploadedImage({
+        imageUrl: signedResult.secure_url,
+        publicId: signedResult.public_id,
+        cloudName: cloudinaryConfig.cloudName,
+      });
+    }
   };
 
   // Show saved Little Moments whenever the page opens.

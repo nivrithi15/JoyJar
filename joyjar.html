@@ -39,6 +39,9 @@
           <label class="block font-bold">A photo (optional)
             <input id="joy-image" type="file" accept="image/*" class="mt-2 block w-full text-sm" />
           </label>
+          <div id="photo-preview-wrap" class="hidden overflow-hidden rounded-2xl border-2 border-[#2b1611] bg-[#fff8f6]">
+            <img id="photo-preview" class="h-52 w-full object-cover" alt="Uploaded photo preview" />
+          </div>
           <button id="save-joy" class="w-full rounded-xl bg-[#ffecb3] border-2 border-[#2b1611] px-5 py-3 font-bold hover:scale-[1.02] transition-transform" type="submit">Save to my JoyJar 💛</button>
         </form>
 
@@ -67,8 +70,24 @@
     const list = document.getElementById("joy-list");
     const jar = document.getElementById("jar");
     const status = document.getElementById("status");
-    const apiBase = window.location.protocol === "file:" ? "http://localhost:5000" : "";
-    const uploadUrl = `${apiBase}/api/upload`;
+    const photoPreviewWrap = document.getElementById("photo-preview-wrap");
+    const photoPreview = document.getElementById("photo-preview");
+    const cloudinaryConfig = {
+      cloudName: "dmvuzwlxs",
+      uploadPreset: "joyjar",
+    };
+    const cloudinaryUploadUrl = `https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/image/upload`;
+    let uploadedPhoto = null;
+
+    const createCloudinarySignature = async (params) => {
+      const raw = Object.entries(params)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("&") + cloudinaryConfig.apiSecret;
+      const bytes = new TextEncoder().encode(raw);
+      const digest = await crypto.subtle.digest("SHA-1", bytes);
+      return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    };
 
     const readStorage = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; } };
     const memories = () => readStorage(joyStorageKey, []);
@@ -78,13 +97,104 @@
     const normalizeUploadedImage = (item = {}) => ({
       ...item,
       publicId: item.publicId || item.public_id || item.cloudinaryId || null,
-      cloudName: item.cloudName || process.env?.CLOUDINARY_CLOUD_NAME || "dmvuzwlxs",
+      cloudName: item.cloudName || cloudinaryConfig.cloudName,
       imageUrl: item.imageUrl || item.secure_url || null,
       polaroidUrl: item.polaroidUrl || item.thumbnailUrl || null,
     });
     const legacyPolaroidUrl = (item) => item.publicId && item.cloudName
       ? `https://res.cloudinary.com/${item.cloudName}/image/upload/w_700,c_limit,b_14px_solid_white,r_18,e_shadow,q_auto,f_auto/${publicPath(item.publicId)}`
       : null;
+
+    const showPreview = (url) => {
+      if (!url) {
+        photoPreviewWrap.classList.add("hidden");
+        photoPreview.src = "";
+        return;
+      }
+      photoPreview.src = url;
+      photoPreviewWrap.classList.remove("hidden");
+    };
+
+    const uploadToCloudinary = async (file) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("api_key", cloudinaryConfig.apiKey);
+
+      if (cloudinaryConfig.uploadPreset) {
+        formData.append("upload_preset", cloudinaryConfig.uploadPreset);
+      }
+
+      try {
+        const response = await fetch(cloudinaryUploadUrl, {
+          method: "POST",
+          body: formData,
+        });
+
+        const text = await response.text();
+        let result = {};
+        if (text) {
+          try {
+            result = JSON.parse(text);
+          } catch (error) {
+            throw new Error(`Cloudinary returned an invalid response: ${text.slice(0, 120)}`);
+          }
+        }
+
+        if (response.ok) {
+          return normalizeUploadedImage({
+            imageUrl: result.secure_url,
+            publicId: result.public_id,
+            cloudName: cloudinaryConfig.cloudName,
+          });
+        }
+
+        if (cloudinaryConfig.apiSecret && !cloudinaryConfig.uploadPreset) {
+          throw new Error(result.error?.message || "Cloudinary could not upload this photo.");
+        }
+
+        throw new Error(result.error?.message || "Cloudinary could not upload this photo.");
+      } catch (error) {
+        if (cloudinaryConfig.apiSecret && !cloudinaryConfig.uploadPreset) {
+          throw error;
+        }
+
+        const timestamp = Math.round(Date.now() / 1000);
+        const params = { folder: "joyjar/memories", timestamp, resource_type: "image" };
+        const signature = await createCloudinarySignature(params);
+
+        const signedData = new FormData();
+        signedData.append("file", file);
+        signedData.append("api_key", cloudinaryConfig.apiKey);
+        signedData.append("timestamp", String(timestamp));
+        signedData.append("signature", signature);
+        signedData.append("folder", "joyjar/memories");
+
+        const signedResponse = await fetch(cloudinaryUploadUrl, {
+          method: "POST",
+          body: signedData,
+        });
+
+        const signedText = await signedResponse.text();
+        let signedResult = {};
+        if (signedText) {
+          try {
+            signedResult = JSON.parse(signedText);
+          } catch (error) {
+            throw new Error(`Cloudinary returned an invalid response: ${signedText.slice(0, 120)}`);
+          }
+        }
+
+        if (!signedResponse.ok) {
+          throw new Error(signedResult.error?.message || "Cloudinary could not upload this photo.");
+        }
+
+        return normalizeUploadedImage({
+          imageUrl: signedResult.secure_url,
+          publicId: signedResult.public_id,
+          cloudName: cloudinaryConfig.cloudName,
+        });
+      }
+    };
 
     const render = () => {
       const items = memories();
@@ -107,7 +217,6 @@
         list.appendChild(card);
         const imageElement = card.querySelector("img");
         if (imageElement && item.imageUrl) {
-          // If strict Cloudinary transformations are disabled or unavailable, show the original.
           imageElement.addEventListener("error", () => {
             if (imageElement.src !== item.imageUrl) imageElement.src = item.imageUrl;
           }, { once: true });
@@ -135,26 +244,41 @@
       render();
     });
 
+    imageInput.addEventListener("change", async () => {
+      const file = imageInput.files[0];
+      if (!file) {
+        uploadedPhoto = null;
+        showPreview(null);
+        return;
+      }
+
+      try {
+        status.textContent = "Uploading your photo…";
+        uploadedPhoto = await uploadToCloudinary(file);
+        showPreview(uploadedPhoto.imageUrl);
+        status.textContent = "Photo ready to save!";
+      } catch (error) {
+        uploadedPhoto = null;
+        showPreview(null);
+        status.textContent = error.message;
+      }
+    });
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const text = textInput.value.trim();
       if (!text) return;
       const button = document.getElementById("save-joy");
-      let uploaded = {};
       let photoError = null;
+
       try {
-        if (imageInput.files[0]) {
+        if (imageInput.files[0] && !uploadedPhoto) {
           button.disabled = true;
           button.textContent = "Adding your photo…";
-          const data = new FormData();
-          data.append("image", imageInput.files[0]);
-          const response = await fetch(uploadUrl, { method: "POST", body: data });
-          const result = await response.json();
-          if (!response.ok) throw new Error(result.message || "Cloudinary could not upload this photo.");
-          uploaded = normalizeUploadedImage(result);
+          uploadedPhoto = await uploadToCloudinary(imageInput.files[0]);
+          showPreview(uploadedPhoto.imageUrl);
         }
       } catch (error) {
-        // A photo upload must never prevent the written joy from being saved.
         photoError = error;
       } finally {
         button.disabled = false;
@@ -162,9 +286,17 @@
       }
 
       const allMemories = memories();
-      allMemories.unshift({ id: crypto.randomUUID(), text, createdAt: new Date().toISOString(), ...uploaded });
+      allMemories.unshift({
+        id: crypto.randomUUID(),
+        text,
+        createdAt: new Date().toISOString(),
+        ...(uploadedPhoto || {}),
+      });
       saveMemories(allMemories);
       form.reset();
+      imageInput.value = "";
+      uploadedPhoto = null;
+      showPreview(null);
       status.textContent = photoError
         ? `Your joy was saved, but the photo could not upload: ${photoError.message}`
         : "A little joy was added to your jar!";
