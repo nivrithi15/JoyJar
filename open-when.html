@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open When… | JoyJar</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: "Nunito Sans", sans-serif; color: #2b1611; background: radial-gradient(circle at 10% 10%, #fff0ed 0 15%, transparent 16%), #fffaf2; }
+    h1, h2, h3 { font-family: "Bricolage Grotesque", sans-serif; }
+    .collection-card { transition: transform .2s ease, box-shadow .2s ease; }
+    .collection-card:hover, .collection-card[aria-pressed="true"] { transform: translateY(-4px) rotate(-1deg); box-shadow: 6px 7px 0 rgba(128,80,98,.22); }
+    .collection-card[aria-pressed="true"] { outline: 3px solid #805062; }
+    .sealed { background: repeating-linear-gradient(-45deg, #fffaf2, #fffaf2 12px, #fff3e8 12px, #fff3e8 24px); }
+    .memory-card { animation: reveal .5s both; animation-delay: var(--delay); }
+    .glitter-piece { position: fixed; z-index: 100; width: 10px; height: 14px; border-radius: 3px; background: var(--color); left: var(--x); top: var(--y); pointer-events: none; animation: burst 1s cubic-bezier(.14,.8,.25,1) forwards; }
+    .glitter-piece.star { width: auto; height: auto; background: transparent; color: var(--color); font-size: 22px; }
+    @keyframes burst { to { transform: translate(var(--dx), var(--dy)) rotate(var(--spin)); opacity: 0; } }
+    @keyframes reveal { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .memory-card, .glitter-piece { animation: none; } }
+  </style>
+</head>
+<body class="min-h-screen">
+  <main class="max-w-6xl mx-auto px-5 py-8 md:py-12">
+    <a href="index.html" class="inline-flex items-center gap-2 font-bold text-[#805062] hover:underline">← Back to little moments</a>
+    <header class="mt-7 max-w-3xl">
+      <p class="font-bold text-[#805062]">For the moments that need a little extra care</p>
+      <h1 class="mt-2 text-4xl md:text-6xl text-[#6b5e31]">Open when… 💌</h1>
+      <p class="mt-4 text-lg text-[#5d514a]">Make tiny collections of words, photos, and memories to unwrap exactly when you need them.</p>
+    </header>
+
+    <section class="mt-10 grid gap-8 lg:grid-cols-[.9fr_1.3fr]">
+      <div>
+        <h2 class="text-2xl text-[#805062]">Your little envelopes</h2>
+        <div id="collection-list" class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1"></div>
+      </div>
+
+      <div class="rounded-[2rem] border-2 border-[#805062] bg-white/85 p-5 shadow-[9px_10px_0_#fde0dc] md:p-8">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p id="collection-kicker" class="font-bold text-[#805062]"></p>
+            <h2 id="collection-title" class="mt-1 text-3xl text-[#6b5e31]"></h2>
+          </div>
+          <button id="open-button" type="button" class="rounded-xl border-2 border-[#2b1611] bg-[#ffecb3] px-5 py-3 font-bold shadow-[3px_4px_0_#e0b368] transition hover:scale-105">Open this envelope ✨</button>
+        </div>
+
+        <div id="memory-area" class="sealed mt-6 min-h-56 rounded-2xl border-2 border-dashed border-[#c9ae91] p-5"></div>
+
+        <details class="mt-7 rounded-2xl border-2 border-[#cdc6b7] bg-[#fff8f6] p-5">
+          <summary class="cursor-pointer font-bold text-[#805062]">Add a memory to this envelope</summary>
+          <form id="memory-form" class="mt-5 space-y-4">
+            <label class="block font-bold">A message
+              <textarea id="memory-text" required maxlength="1000" rows="3" class="mt-2 block w-full rounded-xl border-2 border-[#cdc6b7] bg-white p-3 focus:border-[#805062] focus:ring-0" placeholder="You have made it through hard days before. I believe in you."></textarea>
+            </label>
+            <label class="block font-bold">A photo (optional)
+              <input id="memory-image" type="file" accept="image/*" class="mt-2 block w-full text-sm" />
+              <span class="mt-1 block text-xs font-normal text-[#6b5e31]">For local storage, please choose a photo under 1 MB.</span>
+            </label>
+            <button type="submit" class="rounded-xl border-2 border-[#2b1611] bg-[#cceacd] px-5 py-3 font-bold hover:scale-[1.02]">Tuck this memory in 💛</button>
+          </form>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const collectionStorageKey = "joyjar-open-when-memories";
+    const collections = [
+      { id: "sad", emoji: "💌", title: "Open when you're sad", note: "A soft place to land", color: "#fec1d6" },
+      { id: "bad-day", emoji: "🌧️", title: "Open on a bad day", note: "A pocket of brightness", color: "#b9e5f7" },
+      { id: "birthday", emoji: "🎂", title: "Open on your birthday", note: "A little celebration", color: "#ffecb3" },
+      { id: "miss", emoji: "🥹", title: "When you miss someone", note: "Close, even from afar", color: "#d9c7fa" },
+      { id: "motivation", emoji: "🌟", title: "When you need motivation", note: "You can do this", color: "#cceacd" },
+      { id: "loved", emoji: "❤️", title: "When you need a reminder of how loved you are", note: "Love lives here", color: "#ffd1d8" }
+    ];
+    const collectionList = document.getElementById("collection-list");
+    const title = document.getElementById("collection-title");
+    const kicker = document.getElementById("collection-kicker");
+    const memoryArea = document.getElementById("memory-area");
+    const openButton = document.getElementById("open-button");
+    const form = document.getElementById("memory-form");
+    const textInput = document.getElementById("memory-text");
+    const imageInput = document.getElementById("memory-image");
+    let selectedId = collections[0].id;
+    let isOpen = false;
+
+    const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;" })[character]);
+    const savedMemories = () => { try { return JSON.parse(localStorage.getItem(collectionStorageKey)) || {}; } catch { return {}; } };
+    const saveMemories = (memories) => localStorage.setItem(collectionStorageKey, JSON.stringify(memories));
+    const selectedCollection = () => collections.find((collection) => collection.id === selectedId);
+
+    const burstGlitter = () => {
+      const box = memoryArea.getBoundingClientRect();
+      const centerX = box.left + box.width / 2;
+      const centerY = box.top + Math.min(box.height / 2, 150);
+      const colors = ["#f4b942", "#fec1d6", "#7db9db", "#93b88f", "#c8a7e8"];
+      for (let index = 0; index < 60; index += 1) {
+        const piece = document.createElement("span");
+        const angle = Math.PI * 2 * index / 60 + (Math.random() - .5) * .22;
+        const distance = 65 + Math.random() * 180;
+        piece.className = `glitter-piece${index % 4 === 0 ? " star" : ""}`;
+        if (piece.classList.contains("star")) piece.textContent = "✦";
+        piece.style.setProperty("--x", `${centerX}px`);
+        piece.style.setProperty("--y", `${centerY}px`);
+        piece.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+        piece.style.setProperty("--dy", `${Math.sin(angle) * distance + 70}px`);
+        piece.style.setProperty("--spin", `${Math.random() * 720 - 360}deg`);
+        piece.style.setProperty("--color", colors[index % colors.length]);
+        document.body.appendChild(piece);
+        piece.addEventListener("animationend", () => piece.remove());
+      }
+    };
+
+    const renderCollections = () => {
+      const memoryMap = savedMemories();
+      collectionList.innerHTML = collections.map((collection) => `
+        <button type="button" data-id="${collection.id}" aria-pressed="${collection.id === selectedId}" class="collection-card flex items-center gap-4 rounded-2xl border-2 border-[#2b1611] p-4 text-left" style="background:${collection.color}">
+          <span class="text-3xl">${collection.emoji}</span>
+          <span><strong class="block">${collection.title}</strong><small>${(memoryMap[collection.id] || []).length} saved ${(memoryMap[collection.id] || []).length === 1 ? "memory" : "memories"}</small></span>
+        </button>`).join("");
+    };
+
+    const renderSelected = () => {
+      const collection = selectedCollection();
+      const items = savedMemories()[selectedId] || [];
+      title.textContent = collection.title;
+      kicker.textContent = `${collection.emoji} ${collection.note}`;
+      openButton.textContent = isOpen ? "Close envelope" : "Open this envelope ✨";
+      if (!isOpen) {
+        memoryArea.className = "sealed mt-6 min-h-56 rounded-2xl border-2 border-dashed border-[#c9ae91] p-5 flex items-center justify-center text-center";
+        memoryArea.innerHTML = `<div><span class="text-5xl">${collection.emoji}</span><p class="mt-3 font-bold text-[#805062]">This little envelope is sealed for the moment you need it.</p></div>`;
+        return;
+      }
+      memoryArea.className = "mt-6 grid min-h-56 gap-4 sm:grid-cols-2";
+      memoryArea.innerHTML = items.length ? items.map((item, index) => `
+        <article class="memory-card rounded-2xl border-2 border-[#2b1611] bg-[#fffdf8] p-4 shadow-[4px_5px_0_#f4d7c9]" style="--delay:${index * 80}ms">
+          ${item.image ? `<img src="${item.image}" alt="A saved Open When memory" class="mb-4 h-36 w-full rounded-xl object-cover" />` : ""}
+          <p class="text-lg leading-relaxed">“${escapeHtml(item.text)}”</p>
+          <p class="mt-3 text-xs font-bold text-[#805062]">Saved with love · ${new Date(item.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
+        </article>`).join("") : `<div class="rounded-2xl border-2 border-dashed border-[#c9ae91] p-6 text-center sm:col-span-2"><p class="text-4xl">📝</p><p class="mt-3 font-bold text-[#805062]">This envelope is waiting for its first memory.</p><p class="mt-1 text-sm">Use the form below to tuck in a message or photo.</p></div>`;
+    };
+
+    collectionList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-id]");
+      if (!button) return;
+      selectedId = button.dataset.id;
+      isOpen = false;
+      renderCollections();
+      renderSelected();
+    });
+    openButton.addEventListener("click", () => {
+      isOpen = !isOpen;
+      renderSelected();
+      if (isOpen) burstGlitter();
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = textInput.value.trim();
+      const image = imageInput.files[0];
+      if (!text) return;
+      if (image && image.size > 1024 * 1024) { alert("Please choose a photo smaller than 1 MB."); return; }
+      const save = (imageData = "") => {
+        const memoryMap = savedMemories();
+        memoryMap[selectedId] = [{ text, image: imageData, createdAt: new Date().toISOString() }, ...(memoryMap[selectedId] || [])];
+        saveMemories(memoryMap);
+        form.reset();
+        isOpen = true;
+        renderCollections();
+        renderSelected();
+        burstGlitter();
+      };
+      if (!image) { save(); return; }
+      const reader = new FileReader();
+      reader.onload = () => save(reader.result);
+      reader.readAsDataURL(image);
+    });
+    renderCollections();
+    renderSelected();
+  </script>
+</body>
+</html>
