@@ -18,14 +18,30 @@ const CATEGORIES = [
 ];
 
 // Stream the Multer buffer to Cloudinary without writing a temporary local file.
-const uploadToCloudinary = (buffer) =>
-  new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: "joyjar/memories", resource_type: "image" },
-      (error, result) => (error ? reject(error) : resolve(result))
-    );
-    Readable.from(buffer).pipe(stream);
-  });
+const uploadToCloudinary = async (buffer) => {
+  const baseOptions = { folder: "joyjar/memories", resource_type: "image" };
+  const preset = process.env.CLOUDINARY_UPLOAD_PRESET;
+
+  const upload = (options) =>
+    new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(options, (error, result) =>
+        error ? reject(error) : resolve(result)
+      );
+      Readable.from(buffer).pipe(stream);
+    });
+
+  try {
+    if (preset) {
+      return await upload({ ...baseOptions, upload_preset: preset });
+    }
+    return await upload(baseOptions);
+  } catch (error) {
+    if (preset && (error?.http_code === 403 || /preset/i.test(error?.message || ""))) {
+      return await upload(baseOptions);
+    }
+    throw error;
+  }
+};
 
 /** Add display-only Cloudinary transformation URLs to a memory response. */
 const formatMemory = (memory) => {
