@@ -33,6 +33,12 @@
     }
     .joy-note { position: absolute; border: 2px solid #2b1611; border-radius: 8px; padding: 8px; font-size: 12px; font-weight: 700; box-shadow: 3px 3px 0 rgba(43,22,17,.18); transform: rotate(var(--r)); max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .polaroid { background: white; border: 9px solid white; border-bottom-width: 26px; border-radius: 4px; box-shadow: 4px 5px 0 rgba(43,22,17,.2); transform: rotate(-2deg); }
+    .confetti, .glitter { position: fixed; pointer-events: none; z-index: 100; }
+    .confetti { width: 10px; height: 14px; left: var(--x); top: var(--y); background: var(--color); border-radius: 3px; animation: confetti-pop 850ms cubic-bezier(.18,.75,.32,1) forwards; }
+    .glitter { left: var(--x); top: var(--y); color: #f5b942; font-size: var(--size); line-height: 1; text-shadow: 0 0 8px #fff6ad; animation: glitter-fade 700ms ease-out forwards; }
+    @keyframes confetti-pop { to { transform: translate(var(--dx), var(--dy)) rotate(var(--spin)); opacity: 0; } }
+    @keyframes glitter-fade { to { transform: translateY(-18px) scale(.2) rotate(90deg); opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .confetti, .glitter { display: none; } }
   </style>
 </head>
 <body class="min-h-screen">
@@ -95,6 +101,43 @@
     };
     const cloudinaryUploadUrl = `https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/image/upload`;
     let uploadedPhoto = null;
+
+    const popConfetti = () => {
+      const jarBox = jar.getBoundingClientRect();
+      const x = jarBox.left + jarBox.width / 2;
+      const y = jarBox.top + jarBox.height / 2;
+      const colors = ["#fec1d6", "#ffecb3", "#cceacd", "#b9e5f7", "#c8b6ff"];
+      for (let index = 0; index < 42; index += 1) {
+        const piece = document.createElement("span");
+        const angle = (Math.PI * 2 * index) / 42 + (Math.random() - .5) * .4;
+        const distance = 80 + Math.random() * 150;
+        piece.className = "confetti";
+        piece.style.setProperty("--x", `${x}px`);
+        piece.style.setProperty("--y", `${y}px`);
+        piece.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+        piece.style.setProperty("--dy", `${Math.sin(angle) * distance + 85}px`);
+        piece.style.setProperty("--spin", `${Math.floor(Math.random() * 720 - 360)}deg`);
+        piece.style.setProperty("--color", colors[index % colors.length]);
+        piece.style.animationDelay = `${Math.random() * 90}ms`;
+        document.body.appendChild(piece);
+        piece.addEventListener("animationend", () => piece.remove());
+      }
+    };
+
+    let lastGlitterAt = 0;
+    document.addEventListener("pointermove", (event) => {
+      const now = performance.now();
+      if (event.pointerType === "touch" || now - lastGlitterAt < 45) return;
+      lastGlitterAt = now;
+      const sparkle = document.createElement("span");
+      sparkle.className = "glitter";
+      sparkle.textContent = Math.random() > .45 ? "✦" : "✧";
+      sparkle.style.setProperty("--x", `${event.clientX + (Math.random() - .5) * 10}px`);
+      sparkle.style.setProperty("--y", `${event.clientY + (Math.random() - .5) * 10}px`);
+      sparkle.style.setProperty("--size", `${10 + Math.random() * 10}px`);
+      document.body.appendChild(sparkle);
+      sparkle.addEventListener("animationend", () => sparkle.remove());
+    });
 
     const createCloudinarySignature = async (params) => {
       const raw = Object.entries(params)
@@ -318,6 +361,7 @@
         ? `Your joy was saved, but the photo could not upload: ${photoError.message}`
         : "A little joy was added to your jar!";
       render();
+      popConfetti();
     });
 
     render();
